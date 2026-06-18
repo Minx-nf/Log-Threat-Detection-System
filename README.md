@@ -87,6 +87,18 @@ This SOC Monitor is optimized for local LAN/SMB environments. If you intend to s
 * **Backend:** Swap the `Flask-Limiter` storage from `memory://` to a persistent Redis instance.
 * **Network:** Use a dedicated Reverse Proxy (like Nginx) with a Web Application Firewall (WAF) to handle external traffic instead of exposing the Flask app directly.
 
+### 3. Log Retention & Storage (ILM)
+To prevent disk exhaustion, this system utilizes Elasticsearch Index Lifecycle Management (ILM).
+* **Policy:** A 30-day retention policy is enforced.
+* **Rollover:** New indices are created every 7 days or upon reaching 50GB.
+* **Cleanup:** Logs older than 30 days are automatically deleted by the system.
+
+**Initialization:**
+If you are setting up a fresh environment, run the following infrastructure scripts to apply the retention policies:
+```bash
+python backend/setup_ilm.py
+python backend/setup_template.py
+
 ## 🔮 Future Enhancements
 * SMTP/Email integration for critical alert notifications.
 * Role-Based Access Control (RBAC) for multi-analyst workflows.
