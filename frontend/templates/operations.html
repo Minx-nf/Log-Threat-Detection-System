@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Operations Center{% endblock %}
+{% block page_heading %}Operations Center{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Operations Center</h1>
+        <p>Monitor infrastructure health and collector coverage.</p>
+    </div>
+</div>
+
+<div class="operations-grid">
+    <div class="glass-card">
+        <div class="section-title">
+            <div>
+                <h3>Infrastructure Status</h3>
+                <p>Core platform services</p>
+            </div>
+        </div>
+
+        <div class="service-list">
+            <div class="service-item">
+                <span>Elasticsearch</span>
+                <span id="esStatus" class="service-online">Checking</span>
+            </div>
+
+            <div class="service-item">
+                <span>Kibana</span>
+                <span id="kibanaStatus" class="service-online">Checking</span>
+            </div>
+
+            <div class="service-item">
+                <span>Flask API</span>
+                <span id="flaskStatus" class="service-online">Checking</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-card chart-card">
+        <div class="section-title">
+            <div>
+                <h3>System Health</h3>
+                <p>Operational readiness score</p>
+            </div>
+        </div>
+        <div id="healthGauge"></div>
+    </div>
+</div>
+
+<div class="glass-card mt-3">
+    <div class="section-title">
+        <div>
+            <h3>Collector Agents</h3>
+            <p>LAN endpoints sending logs to this server</p>
+        </div>
+        <span class="status-card">
+            <span class="status-dot"></span>
+            <span id="collectorEndpoint">Loading endpoint</span>
+        </span>
+    </div>
+
+    <div class="agent-table-wrap">
+        <table class="table data-table">
+            <thead>
+                <tr>
+                    <th>Host</th>
+                    <th>Collector IP</th>
+                    <th>Status</th>
+                    <th>Total Logs</th>
+                    <th>Latest Event</th>
+                    <th>Last Seen</th>
+                </tr>
+            </thead>
+            <tbody id="agentsBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const healthGauge = new ApexCharts(
+    document.querySelector("#healthGauge"),
+    {
+        chart: {
+            type: "radialBar",
+            height: 320,
+            toolbar: { show: false }
+        },
+        colors: ["#2563eb"],
+        plotOptions: {
+            radialBar: {
+                hollow: { size: "62%" },
+                dataLabels: {
+                    name: { color: "#64748b" },
+                    value: {
+                        color: "#111827",
+                        fontSize: "28px"
+                    }
+                }
+            }
+        },
+        series: [0],
+        labels: ["System Health"]
+    }
+);
+
+healthGauge.render();
+
+function setServiceStatus(id, online) {
+    const element = document.getElementById(id);
+    element.innerText = online ? "ONLINE" : "OFFLINE";
+    element.className = online ? "service-online" : "service-offline";
+}
+
+async function updateStatus() {
+    const response = await fetch("/api/system-status");
+    const data = await response.json();
+    const score = [data.elasticsearch, data.kibana, data.flask]
+        .filter(Boolean)
+        .length * 33;
+
+    setServiceStatus("esStatus", data.elasticsearch);
+    setServiceStatus("kibanaStatus", data.kibana);
+    setServiceStatus("flaskStatus", data.flask);
+    healthGauge.updateSeries([Math.min(score, 100)]);
+}
+
+function renderAgentRow(agent) {
+    const row = document.createElement("tr");
+    const fields = [
+        agent.hostname || agent.collector_id,
+        agent.collector_ip,
+        agent.status,
+        agent.total_logs,
+        (agent.latest_event || "").replaceAll("_", " "),
+        agent.last_seen,
+    ];
+
+    fields.forEach((value, index) => {
+        const cell = document.createElement("td");
+
+        if (index === 2) {
+            const pill = document.createElement("span");
+            pill.className = `status-pill ${value}`;
+            pill.textContent = value;
+            cell.appendChild(pill);
+        } else {
+            cell.textContent = value || "";
+        }
+
+        row.appendChild(cell);
+    });
+
+    return row;
+}
+
+async function updateAgents() {
+    const response = await fetch("/api/agents");
+    const agents = await response.json();
+    const tbody = document.getElementById("agentsBody");
+    tbody.innerHTML = "";
+
+    if (!agents.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 6;
+        cell.className = "muted";
+        cell.textContent = "No collector agents have reported yet.";
+        row.appendChild(cell);
+        tbody.appendChild(row);
+        return;
+    }
+
+    agents.forEach(agent => tbody.appendChild(renderAgentRow(agent)));
+}
+
+document.getElementById("collectorEndpoint").innerText =
+    `${window.location.protocol}//${window.location.host}/api/logs`;
+
+updateStatus();
+updateAgents();
+setInterval(updateStatus, 5000);
+setInterval(updateAgents, 5000);
+</script>
+
+{% endblock %}

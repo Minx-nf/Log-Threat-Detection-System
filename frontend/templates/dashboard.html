@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block title %}SOC Dashboard{% endblock %}
+{% block page_heading %}SOC Dashboard{% endblock %}
+
+{% block content %}
+
+<section class="metric-grid">
+    <div class="metric-card">
+        <div class="metric-icon">
+            <i class="fas fa-database"></i>
+        </div>
+        <div>
+            <h2 id="totalLogs">{{ stats.total_logs }}</h2>
+            <span>Total Logs</span>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon">
+            <i class="fas fa-triangle-exclamation"></i>
+        </div>
+        <div>
+            <h2 id="totalAlerts">{{ stats.total_alerts }}</h2>
+            <span>Total Alerts</span>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon">
+            <i class="fas fa-circle-nodes"></i>
+        </div>
+        <div>
+            <h2 id="onlineAgents">{{ stats.online_agents }}</h2>
+            <span>Online Agents</span>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon">
+            <i class="fas fa-shield-heart"></i>
+        </div>
+        <div>
+            <h2 id="securityScore">{{ stats.security_score }}</h2>
+            <span>Security Score</span>
+        </div>
+    </div>
+</section>
+
+<div class="toolbar" style="justify-content: flex-end; margin-top: 20px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <strong class="muted">Focus View:</strong>
+        <select id="dashboardHostFilter" class="form-select" style="min-width: 250px;">
+            <option value="">All Hosts (PCs)</option>
+        </select>
+    </div>
+</div>
+
+<section class="dashboard-grid">
+    <div class="glass-card">
+        <div class="section-title">
+            <div>
+                <h3>Recent Activity</h3>
+                <p>Latest events received from collector agents</p>
+            </div>
+            <a href="/logs" class="btn-secondary-custom">
+                <i class="fas fa-list"></i>
+                View Logs
+            </a>
+        </div>
+
+        <div class="activity-feed" id="recentActivityFeed">
+            </div>
+    </div>
+
+    <aside class="glass-card">
+        <div class="section-title">
+            <div>
+                <h3>Threat Summary</h3>
+                <p>Current alert distribution</p>
+            </div>
+        </div>
+
+        <div class="severity-strip">
+            <div class="severity-item">
+                <strong id="criticalAlerts">{{ stats.critical_alerts }}</strong>
+                <span>Critical</span>
+            </div>
+            <div class="severity-item">
+                <strong id="highAlerts">{{ stats.high_alerts }}</strong>
+                <span>High</span>
+            </div>
+            <div class="severity-item">
+                <strong id="mediumAlerts">{{ stats.medium_alerts }}</strong>
+                <span>Medium</span>
+            </div>
+            <div class="severity-item">
+                <strong id="lowAlerts">{{ stats.low_alerts }}</strong>
+                <span>Low</span>
+            </div>
+        </div>
+
+        <div class="feed-list mt-3" id="liveThreatFeed">
+            </div>
+    </aside>
+</section>
+
+<div id="threatDrawer" class="threat-drawer">
+    <div class="drawer-header">
+        <h3>Event Investigation</h3>
+        <button type="button" onclick="closeThreat()" aria-label="Close investigation panel">
+            <i class="fas fa-xmark"></i>
+        </button>
+    </div>
+
+    <div class="drawer-content">
+        <div class="detail-grid">
+            <div class="detail-item">
+                <strong>Timestamp</strong>
+                <span id="drawerTime"></span>
+            </div>
+            <div class="detail-item">
+                <strong>Event</strong>
+                <span id="drawerEvent"></span>
+            </div>
+            <div class="detail-item">
+                <strong>User</strong>
+                <span id="drawerUser"></span>
+            </div>
+            <div class="detail-item">
+                <strong>Source IP</strong>
+                <span id="drawerIP"></span>
+            </div>
+            <div class="detail-item">
+                <strong>Host</strong>
+                <span id="drawerHost"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allDashboardLogs = [];
+let allDashboardThreats = [];
+let currentDashboardHost = "";
+
+// Helper for UI Icons
+function getIconForEvent(type) {
+    if (type === 'failed_login') return '<i class="fas fa-user-lock"></i>';
+    if (type === 'successful_login') return '<i class="fas fa-user-check"></i>';
+    if (type === 'port_scan') return '<i class="fas fa-satellite-dish"></i>';
+    if (type === 'privilege_escalation') return '<i class="fas fa-key"></i>';
+    return '<i class="fas fa-shield-halved"></i>';
+}
+
+// NEW: Helper to safely format time
+function formatTime(isoString) {
+    if (!isoString) return "Unknown time";
+    const date = new Date(isoString);
+    return isNaN(date) ? "Invalid Date" : date.toLocaleString(); 
+}
+
+async function fetchDashboardFeeds() {
+    try {
+        const [logsRes, threatsRes] = await Promise.all([
+            fetch("/api/logs"),
+            fetch("/api/threats")
+        ]);
+        
+        let rawLogs = await logsRes.json();
+        let rawThreats = await threatsRes.json();
+        
+        // Ensure newest-first sorting
+        rawLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        rawThreats.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        allDashboardLogs = rawLogs;
+        allDashboardThreats = rawThreats;
+        
+        populateDashboardDropdown();
+        applyDashboardFilter();
+    } catch(e) {
+        console.error("Failed to load feeds:", e);
+    }
+}
+
+function populateDashboardDropdown() {
+    const filter = document.getElementById("dashboardHostFilter");
+    const selected = filter.value;
+    
+    // Extract unique hosts
+    const hosts = [...new Set(allDashboardLogs.map(l => l.hostname))].filter(Boolean);
+    
+    filter.innerHTML = '<option value="">All Hosts (PCs)</option>';
+    hosts.forEach(host => {
+        const opt = document.createElement("option");
+        opt.value = host;
+        opt.textContent = host;
+        if (host === selected) opt.selected = true;
+        filter.appendChild(opt);
+    });
+}
+
+function applyDashboardFilter() {
+    let fLogs = allDashboardLogs;
+    let fThreats = allDashboardThreats;
+    
+    if (currentDashboardHost !== "") {
+        fLogs = fLogs.filter(l => l.hostname === currentDashboardHost);
+        fThreats = fThreats.filter(t => t.hostname === currentDashboardHost);
+    }
+    
+    renderActivityFeed(fLogs);
+    renderThreatFeed(fThreats);
+}
+
+function renderActivityFeed(logs) {
+    const container = document.getElementById("recentActivityFeed");
+    container.innerHTML = "";
+    const topLogs = logs.slice(0, 8);
+    
+    if (topLogs.length === 0) {
+        container.innerHTML = `
+            <div class="activity-item">
+                <div class="activity-icon"><i class="fas fa-inbox"></i></div>
+                <div class="activity-content">
+                    <h4>No logs received</h4>
+                    <p>Collector activity will appear here.</p>
+                </div>
+            </div>`;
+        return;
+    }
+    
+    topLogs.forEach(log => {
+        const eventName = (log.event_type || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const item = document.createElement("div");
+        item.className = "activity-item";
+        
+        // Add the time to the dataset so the drawer can read it
+        item.dataset.time = formatTime(log.timestamp);
+        item.dataset.event = log.event_type;
+        item.dataset.user = log.username;
+        item.dataset.ip = log.source_ip;
+        item.dataset.host = log.hostname;
+        item.onclick = function() { openThreat(this); };
+        
+        // Add the timestamp visually to the feed card
+        item.innerHTML = `
+            <div class="activity-icon">${getIconForEvent(log.event_type)}</div>
+            <div class="activity-content">
+                <h4>${eventName}</h4>
+                <p style="margin-bottom: 2px;">${log.hostname || 'Unknown'} | ${log.username || 'Unknown'} | ${log.source_ip || 'Unknown'}</p>
+                <small class="muted"><i class="fas fa-clock"></i> ${formatTime(log.timestamp)}</small>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function renderThreatFeed(threats) {
+    const container = document.getElementById("liveThreatFeed");
+    container.innerHTML = "";
+    const topThreats = threats.slice(0, 5);
+    
+    if (topThreats.length === 0) {
+        container.innerHTML = `
+            <div class="feed-item">
+                <span class="status-pill online">Clear</span>
+                <div>
+                    <strong>No active alerts</strong>
+                    <br><small class="muted">Threat detections will appear here.</small>
+                </div>
+            </div>`;
+        return;
+    }
+    
+    topThreats.forEach(alert => {
+        const severity = (alert.severity || 'LOW').toUpperCase();
+        const severityClass = severity.toLowerCase();
+        const item = document.createElement("div");
+        item.className = "feed-item";
+        
+        item.innerHTML = `
+            <span class="feed-severity ${severityClass}">${severity}</span>
+            <div>
+                <strong>${alert.threat || 'Unknown Threat'}</strong>
+                <br><small class="muted">${alert.hostname || 'Unknown'} | ${alert.source_ip || 'Unknown'}</small>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+document.getElementById("dashboardHostFilter").addEventListener("change", (e) => {
+    currentDashboardHost = e.target.value;
+    applyDashboardFilter();
+});
+
+async function refreshStats() {
+    const response = await fetch("/api/stats");
+    const stats = await response.json();
+
+    document.getElementById("totalLogs").innerText = stats.total_logs;
+    document.getElementById("totalAlerts").innerText = stats.total_alerts;
+    document.getElementById("onlineAgents").innerText = stats.online_agents;
+    document.getElementById("securityScore").innerText = stats.security_score;
+    document.getElementById("criticalAlerts").innerText = stats.critical_alerts;
+    document.getElementById("highAlerts").innerText = stats.high_alerts;
+    document.getElementById("mediumAlerts").innerText = stats.medium_alerts;
+    document.getElementById("lowAlerts").innerText = stats.low_alerts;
+}
+
+function openThreat(element) {
+    document.getElementById("drawerTime").innerText = element.dataset.time;
+    document.getElementById("drawerEvent").innerText = element.dataset.event;
+    document.getElementById("drawerUser").innerText = element.dataset.user;
+    document.getElementById("drawerIP").innerText = element.dataset.ip;
+    document.getElementById("drawerHost").innerText = element.dataset.host;
+    document.getElementById("threatDrawer").classList.add("open");
+}
+
+function closeThreat() {
+    document.getElementById("threatDrawer").classList.remove("open");
+}
+
+// Start polling
+refreshStats();
+fetchDashboardFeeds();
+setInterval(refreshStats, 5000);
+setInterval(fetchDashboardFeeds, 5000);
+</script>
+
+{% endblock %}

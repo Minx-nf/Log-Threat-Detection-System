@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}Threat Center{% endblock %}
+{% block page_heading %}Threat Center{% endblock %}
+
+{% block content %}
+{% set critical_count = alerts | selectattr('severity', 'equalto', 'CRITICAL') | list | length %}
+{% set high_count = alerts | selectattr('severity', 'equalto', 'HIGH') | list | length %}
+{% set medium_count = alerts | selectattr('severity', 'equalto', 'MEDIUM') | list | length %}
+{% set low_count = alerts | selectattr('severity', 'equalto', 'LOW') | list | length %}
+
+<div class="page-header">
+    <div>
+        <h1>Threat Center</h1>
+        <p>Real-time threat monitoring and incident tracking.</p>
+    </div>
+</div>
+
+<div class="toolbar" style="justify-content: flex-end; margin-bottom: 15px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <strong class="muted">Focus View:</strong>
+        <select id="threatHostFilter" class="form-select" style="min-width: 250px;">
+            <option value="">All Hosts (PCs)</option>
+        </select>
+    </div>
+</div>
+
+<div class="threat-layout">
+    <div class="glass-card">
+        <div class="section-title">
+            <div>
+                <h3>Live Threat Feed</h3>
+                <p>Latest detections from the analysis engine</p>
+            </div>
+        </div>
+
+        <div class="feed-list" id="threatFeed">
+            </div>
+    </div>
+
+    <aside class="glass-card incident-panel">
+        <div class="section-title">
+            <div>
+                <h3>Active Incidents</h3>
+                <p>Severity distribution</p>
+            </div>
+        </div>
+
+        <div class="incident-summary-grid">
+            <div class="incident-card">
+                <span class="incident-tag critical">Critical</span>
+                <h3>{{ critical_count }}</h3>
+            </div>
+            <div class="incident-card">
+                <span class="incident-tag high">High</span>
+                <h3>{{ high_count }}</h3>
+            </div>
+            <div class="incident-card">
+                <span class="incident-tag medium">Medium</span>
+                <h3>{{ medium_count }}</h3>
+            </div>
+            <div class="incident-card">
+                <span class="incident-tag low">Low</span>
+                <h3>{{ low_count }}</h3>
+            </div>
+        </div>
+
+        {% for alert in alerts[:5] %}
+        <div class="incident-card">
+            <span class="incident-tag {{ alert.get('severity','').lower() }}">
+                {{ alert.get('severity','') }}
+            </span>
+            <h4>{{ alert.get('threat','Unknown Threat') }}</h4>
+            <p>{{ alert.get('hostname','Unknown') }} | {{ alert.get('source_ip','Unknown') }}</p>
+        </div>
+        {% else %}
+        <div class="incident-card">
+            <span class="status-pill online">Clear</span>
+            <h4>No active incidents</h4>
+            <p>New alerts will appear after detection.</p>
+        </div>
+        {% endfor %}
+    </aside>
+</div>
+
+<div id="threatModal" class="modal-backdrop-custom">
+    <div class="modal-panel">
+        <div class="section-title">
+            <div>
+                <h2>Threat Details</h2>
+            </div>
+            <button onclick="closeThreatModal()" class="btn-secondary-custom" type="button">
+                <i class="fas fa-xmark"></i>
+                Close
+            </button>
+        </div>
+
+        <div id="threatModalContent"></div>
+    </div>
+</div>
+
+<script>
+let allThreats = [];
+let currentThreatHost = "";
+
+function recommendationFor(alert) {
+    const threat = (alert.threat || "").toLowerCase();
+
+    if (threat.includes("port")) {
+        return "Review firewall logs and block the source when confirmed.";
+    }
+    if (threat.includes("privilege")) {
+        return "Review account permissions and recent administrative actions.";
+    }
+    if (threat.includes("injection")) {
+        return "Inspect the request payload and validate web input controls.";
+    }
+    if (threat.includes("brute")) {
+        return "Check account lockout status and source network reputation.";
+    }
+
+    return "Investigate the related host, user, and source address.";
+}
+
+function renderThreat(alert) {
+    const item = document.createElement("div");
+    item.className = "feed-item";
+    item.style.cursor = "pointer";
+    item.addEventListener("click", () => showThreatDetails(alert));
+
+    const severity = document.createElement("span");
+    severity.className = `feed-severity ${(alert.severity || "").toLowerCase()}`;
+    severity.textContent = alert.severity || "LOW";
+
+    const body = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = alert.threat || "Unknown Threat";
+    // Updated: Injecting the timestamp into the meta display
+    const meta = document.createElement("small");
+    meta.className = "muted";
+    meta.innerHTML = `
+        ${alert.hostname || "Unknown"} | ${alert.source_ip || "Unknown"}
+        <br>
+        <i class="fas fa-clock" style="margin-top: 4px;"></i> ${formatTime(alert.timestamp)}
+    `;
+
+    body.appendChild(title);
+    body.appendChild(document.createElement("br"));
+    body.appendChild(meta);
+    item.appendChild(severity);
+    item.appendChild(body);
+
+    return item;
+}
+
+async function loadThreats() {
+    const response = await fetch("/api/threats");
+    let rawThreats = await response.json();
+    
+    // Sort newest first
+    rawThreats.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    allThreats = rawThreats;
+    
+    populateThreatDropdown();
+    applyThreatFilter();
+}
+
+function populateThreatDropdown() {
+    const filter = document.getElementById("threatHostFilter");
+    const selected = filter.value;
+    
+    // Extract unique hosts
+    const hosts = [...new Set(allThreats.map(t => t.hostname))].filter(Boolean);
+    
+    filter.innerHTML = '<option value="">All Hosts (PCs)</option>';
+    hosts.forEach(host => {
+        const opt = document.createElement("option");
+        opt.value = host;
+        opt.textContent = host;
+        if (host === selected) opt.selected = true;
+        filter.appendChild(opt);
+    });
+}
+
+function applyThreatFilter() {
+    let filtered = allThreats;
+    if (currentThreatHost !== "") {
+        filtered = filtered.filter(t => t.hostname === currentThreatHost);
+    }
+    
+    const container = document.getElementById("threatFeed");
+    container.innerHTML = "";
+    
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="feed-item"><span class="muted">No threats detected for this host.</span></div>';
+        return;
+    }
+
+    // Render the top 20 after filtering
+    filtered.slice(0, 20).forEach(alert => {
+        container.appendChild(renderThreat(alert));
+    });
+}
+
+document.getElementById("threatHostFilter").addEventListener("change", (e) => {
+    currentThreatHost = e.target.value;
+    applyThreatFilter();
+});
+
+function addThreatDetail(grid, label, value) {
+    const item = document.createElement("div");
+    item.className = "detail-item";
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    const span = document.createElement("span");
+    span.textContent = value || "";
+    item.appendChild(strong);
+    item.appendChild(span);
+    grid.appendChild(item);
+}
+
+// Convert UTC military time to local time for the modal
+function formatTime(isoString) {
+    if (!isoString) return "Unknown time";
+    const date = new Date(isoString);
+    return isNaN(date) ? "Invalid Date" : date.toLocaleString(); 
+}
+
+function showThreatDetails(alert) {
+    const content = document.getElementById("threatModalContent");
+    content.innerHTML = "";
+
+    const grid = document.createElement("div");
+    grid.className = "detail-grid";
+    addThreatDetail(grid, "Threat", alert.threat);
+    addThreatDetail(grid, "Severity", alert.severity);
+    addThreatDetail(grid, "Host", alert.hostname);
+    addThreatDetail(grid, "Source IP", alert.source_ip);
+    addThreatDetail(grid, "User", alert.username);
+    addThreatDetail(grid, "Timestamp", formatTime(alert.timestamp));
+    content.appendChild(grid);
+
+    const recommendation = document.createElement("div");
+    recommendation.className = "detail-item mt-3";
+    const strong = document.createElement("strong");
+    strong.textContent = "Recommendation";
+    const span = document.createElement("span");
+    span.textContent = recommendationFor(alert);
+    recommendation.appendChild(strong);
+    recommendation.appendChild(span);
+    content.appendChild(recommendation);
+
+    document.getElementById("threatModal").style.display = "block";
+}
+
+function closeThreatModal() {
+    document.getElementById("threatModal").style.display = "none";
+}
+
+loadThreats();
+setInterval(loadThreats, 5000);
+</script>
+
+{% endblock %}

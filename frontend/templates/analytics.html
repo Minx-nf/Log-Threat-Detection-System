@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Center{% endblock %}
+{% block page_heading %}Analytics Center{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Security Analytics Center</h1>
+        <p>Analyze trends, attack patterns and security metrics.</p>
+    </div>
+</div>
+
+<div class="analytics-grid">
+    <div class="glass-card chart-card">
+        <div class="section-title">
+            <div>
+                <h3>Attack Timeline</h3>
+                <p>Events grouped by date</p>
+            </div>
+        </div>
+        <div id="timelineChart"></div>
+    </div>
+
+    <div class="glass-card chart-card">
+        <div class="section-title">
+            <div>
+                <h3>Threat Severity</h3>
+                <p>Alert breakdown</p>
+            </div>
+        </div>
+        <div id="severityChart"></div>
+    </div>
+</div>
+
+<div class="analytics-grid">
+    <div class="glass-card chart-card">
+        <div class="section-title">
+            <div>
+                <h3>Event Types</h3>
+                <p>Log categories detected</p>
+            </div>
+        </div>
+        <div id="eventChart"></div>
+    </div>
+
+    <div class="glass-card chart-card">
+        <div class="section-title">
+            <div>
+                <h3>Top Sources</h3>
+                <p>Most active source addresses</p>
+            </div>
+        </div>
+        <div id="ipChart"></div>
+    </div>
+</div>
+
+<script>
+const chartText = {
+    fontFamily: "Segoe UI, Arial, sans-serif",
+    foreColor: "#64748b"
+};
+
+const axisStyle = {
+    labels: { style: { colors: "#64748b" } },
+    axisBorder: { color: "#d9e0e8" },
+    axisTicks: { color: "#d9e0e8" }
+};
+
+const timelineChart = new ApexCharts(
+    document.querySelector("#timelineChart"),
+    {
+        chart: {
+            type: "area",
+            height: 320,
+            toolbar: { show: false },
+            ...chartText
+        },
+        colors: ["#2563eb"],
+        dataLabels: { enabled: false },
+        stroke: { curve: "smooth", width: 2 },
+        
+        // NEW: Force the chart to draw visible dots for single-day data
+        markers: {
+            size: 5,
+            colors: ["#2563eb"],
+            strokeColors: "#ffffff",
+            strokeWidth: 2,
+            hover: { size: 7 }
+        },
+        
+        grid: { borderColor: "#e5eaf0" },
+        series: [{ name: "Events", data: [] }],
+        xaxis: { categories: [], ...axisStyle },
+        yaxis: axisStyle
+    }
+);
+
+timelineChart.render();
+
+
+const severityChart = new ApexCharts(
+    document.querySelector("#severityChart"),
+    {
+        chart: {
+            type: "donut",
+            height: 320,
+            toolbar: { show: false },
+            ...chartText
+        },
+        colors: ["#c52233", "#b45309", "#2563eb", "#16803c"],
+        labels: ["Critical", "High", "Medium", "Low"],
+        series: [0, 0, 0, 0],
+        legend: { position: "bottom" }
+    }
+);
+
+severityChart.render();
+
+const eventChart = new ApexCharts(
+    document.querySelector("#eventChart"),
+    {
+        chart: {
+            type: "bar",
+            height: 320,
+            toolbar: { show: false },
+            ...chartText
+        },
+        colors: ["#047481"],
+        grid: { borderColor: "#e5eaf0" },
+        series: [{ name: "Events", data: [] }],
+        xaxis: { categories: [], ...axisStyle },
+        yaxis: axisStyle
+    }
+);
+
+eventChart.render();
+
+const ipChart = new ApexCharts(
+    document.querySelector("#ipChart"),
+    {
+        chart: {
+            type: "bar",
+            height: 320,
+            toolbar: { show: false },
+            ...chartText
+        },
+        colors: ["#2563eb"],
+        grid: { borderColor: "#e5eaf0" },
+        series: [{ name: "Logs", data: [] }],
+        xaxis: { categories: [], ...axisStyle },
+        yaxis: axisStyle
+    }
+);
+
+ipChart.render();
+
+async function updateAnalytics() {
+    const response = await fetch("/api/analytics");
+    const data = await response.json();
+
+    severityChart.updateSeries([
+        data.critical,
+        data.high,
+        data.medium,
+        data.low
+    ]);
+
+    const eventLabels = Object.keys(data.event_types);
+    const eventValues = Object.values(data.event_types);
+
+    eventChart.updateOptions({
+        xaxis: { categories: eventLabels, ...axisStyle }
+    });
+    eventChart.updateSeries([{ name: "Events", data: eventValues }]);
+
+// --- TIMELINE CHART UPDATE ---
+    const dailyEntries = Object.entries(data.daily_events).sort();
+    
+    // Safely format "2026-06-16" into "Jun 16"
+    const formattedDates = dailyEntries.map(item => {
+        // Appending T12:00:00 forces it to parse midday, avoiding timezone bugs
+        const dateObj = new Date(item[0] + "T12:00:00"); 
+        return isNaN(dateObj) ? item[0] : dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    // Update the data and the labels at the exact same time
+    timelineChart.updateOptions({
+        series: [{
+            name: "Events",
+            data: dailyEntries.map(item => item[1])
+        }],
+        xaxis: {
+            categories: formattedDates,
+            ...axisStyle
+        }
+    });
+    // -----------------------------
+    timelineChart.updateSeries([{
+        name: "Events",
+        data: dailyEntries.map(item => item[1])
+    }]);
+
+    const topIps = Object.entries(data.top_ips)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+    ipChart.updateOptions({
+        xaxis: {
+            categories: topIps.map(ip => ip[0]),
+            ...axisStyle
+        }
+    });
+    ipChart.updateSeries([{
+        name: "Logs",
+        data: topIps.map(ip => ip[1])
+    }]);
+}
+
+updateAnalytics();
+setInterval(updateAnalytics, 5000);
+</script>
+
+{% endblock %}

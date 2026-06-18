@@ -1,0 +1,19 @@
+# Secrets and Environment
+.env
+*.env
+
+# Python/Environment
+venv/
+__pycache__/
+*.pyc
+
+# Project State Files (Local tracking only)
+collector_state.json
+soc_config.json
+reports/
+*.pdf
+
+# IDE/System Files
+.vscode/
+.idea/
+.DS_Store

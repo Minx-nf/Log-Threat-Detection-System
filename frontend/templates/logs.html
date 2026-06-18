@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Logs Explorer{% endblock %}
+{% block page_heading %}Logs Explorer{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Logs Explorer</h1>
+        <p>Search and investigate collected security events.</p>
+    </div>
+</div>
+
+<div class="glass-card">
+    <div class="toolbar">
+        <input
+            type="text"
+            id="searchBox"
+            placeholder="Search logs..."
+            class="form-control"
+        >
+
+        <select id="hostFilter" class="form-select">
+            <option value="">All Hosts (PCs)</option>
+        </select>
+
+        <select id="eventFilter" class="form-select">
+            <option value="">All Events</option>
+            <option value="failed_login">Failed Login</option>
+            <option value="successful_login">Successful Login</option>
+            <option value="port_scan">Port Scan</option>
+            <option value="privilege_escalation">Privilege Escalation</option>
+            <option value="windows_event">Windows Event</option>
+            <option value="unknown">Unknown</option>
+        </select>
+    </div>
+
+    <div class="table-wrap">
+        <table class="table data-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Event Type</th>
+                    <th>Host</th>
+                    <th>Source IP</th>
+                    <th>User</th>
+                    <th>Collector</th>
+                </tr>
+            </thead>
+            <tbody id="logsBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<div id="logModal" class="modal-backdrop-custom">
+    <div class="modal-panel">
+        <div class="section-title">
+            <div>
+                <h2>Event Details</h2>
+            </div>
+            <button onclick="closeModal()" class="btn-secondary-custom" type="button">
+                <i class="fas fa-xmark"></i>
+                Close
+            </button>
+        </div>
+
+        <div id="modalContent"></div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/logs.js') }}"></script>
+
+{% endblock %}

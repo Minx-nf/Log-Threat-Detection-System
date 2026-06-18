@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Reports{% endblock %}
+{% block page_heading %}Reports{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Security Reports</h1>
+        <p>Generate and export threat analysis reports.</p>
+    </div>
+</div>
+
+<div class="reports-grid">
+    <div class="report-card">
+        <i class="fas fa-calendar-day"></i>
+        <h3>Daily Report</h3>
+        <p>Generate today's security report.</p>
+        <a href="/generate-report/daily" class="btn-primary-custom">
+            <i class="fas fa-download"></i>
+            Generate
+        </a>
+    </div>
+
+    <div class="report-card">
+        <i class="fas fa-calendar-week"></i>
+        <h3>Weekly Report</h3>
+        <p>Generate weekly threat summary.</p>
+        <a href="/generate-report/weekly" class="btn-primary-custom">
+            <i class="fas fa-download"></i>
+            Generate
+        </a>
+    </div>
+
+    <div class="report-card">
+        <i class="fas fa-calendar-days"></i>
+        <h3>Monthly Report</h3>
+        <p>Generate monthly analysis report.</p>
+        <a href="/generate-report/monthly" class="btn-primary-custom">
+            <i class="fas fa-download"></i>
+            Generate
+        </a>
+    </div>
+</div>
+
+{% endblock %}
