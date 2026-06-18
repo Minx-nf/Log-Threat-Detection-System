@@ -49,6 +49,7 @@
         {% endif %}
 
         <form method="POST" action="/login">
+            {{ form.hidden_tag() }}
             <div style="text-align: left; margin-bottom: 24px;">
                 <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Admin Password</label>
                 <input type="password" name="password" class="form-control" placeholder="Enter password..." required autofocus>

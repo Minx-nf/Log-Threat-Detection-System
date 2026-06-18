@@ -76,6 +76,17 @@ soc-threat-detector/
 └── requirements.txt    # Python dependencies
 ```
 
+## Deployment & Security Notes
+
+### 1. SSL/TLS Certificate Requirement
+**CRITICAL NOTE FOR DEPLOYMENT:** If you are running your collector on a different PC than the server, you must copy the `certs/cert.pem` file onto that client PC. Put it in the same directory as your `windows_log_collector.py` file. Without this file, the agent will fail to verify the connection and the service will crash.
+
+### 2. Scalability for Production Environments
+This SOC Monitor is optimized for local LAN/SMB environments. If you intend to scale this to an enterprise level (50+ agents or high log volume):
+* **Elasticsearch:** Move from a single-node instance to a clustered setup for redundancy.
+* **Backend:** Swap the `Flask-Limiter` storage from `memory://` to a persistent Redis instance.
+* **Network:** Use a dedicated Reverse Proxy (like Nginx) with a Web Application Firewall (WAF) to handle external traffic instead of exposing the Flask app directly.
+
 ## 🔮 Future Enhancements
 * SMTP/Email integration for critical alert notifications.
 * Role-Based Access Control (RBAC) for multi-analyst workflows.
