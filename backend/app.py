@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 from flask_bcrypt import Bcrypt
 from flask import Flask, jsonify, render_template, request, send_file, session, redirect, url_for
 import requests
-
+from flask_wtf.csrf import CSRFProtect
+from flask_wtf import FlaskForm
+from wtforms import PasswordField
+from wtforms.validators import DataRequired
 from dashboard_stats import get_dashboard_stats
 from detector import analyze_log
 from elasticsearch_handler import (
@@ -19,6 +22,8 @@ from elasticsearch_handler import (
     save_log,
 )
 from report_generator import generate_pdf
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
@@ -27,10 +32,14 @@ app = Flask(
     template_folder="../frontend/templates",
     static_folder="../frontend/static",
 )
+limiter = Limiter(get_remote_address, app=app, default_limits=["200 per day", "50 per hour"])
+class LoginForm(FlaskForm):
+    password = PasswordField('password', validators=[DataRequired()])
 
 # --- Security Config ---
 bcrypt = Bcrypt(app)
 app.secret_key = os.getenv("SECRET_KEY", "fallback_dev_key_if_env_fails")
+csrf = CSRFProtect(app)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30) 
 
 ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
@@ -62,7 +71,9 @@ def require_api_key(f):
 # ==========================================
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")  # Only 5 attempts per minute per IP
 def login():
+    form = LoginForm()
     error = None
     if request.method == 'POST':
         # Now checks against the hashed password
@@ -71,7 +82,7 @@ def login():
             session['logged_in'] = True
             return redirect(request.args.get('next') or url_for('dashboard'))
         error = "Invalid password. Access denied."
-    return render_template('login.html', error=error)
+    return render_template('login.html', error=error, form=form)
 
 @app.route('/logout')
 def logout():
@@ -367,4 +378,6 @@ def debug():
     return jsonify(logs[:5])
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("FLASK_PORT", 5000)), debug=True)
+    # Pointing to the certs we just generated
+    context = ('certs/cert.pem', 'certs/key.pem')
+    app.run(host="0.0.0.0", port=int(os.getenv("FLASK_PORT", 5000)), debug=True, ssl_context=context)

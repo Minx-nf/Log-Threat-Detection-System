@@ -118,6 +118,7 @@ def send_logs(server_url, logs):
         normalize_server_url(server_url),
         json=logs,
         headers={"X-API-Key": COLLECTOR_API_KEY}, # The Handshake
+        verify='certs/cert.pem'
         timeout=10,
     )
     response.raise_for_status()
